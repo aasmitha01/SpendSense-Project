@@ -1,28 +1,32 @@
-import Sidebar from "../components/Sidebar";
+
 import TransactionModal from "../components/TransactionModal";
 import { useState, useEffect } from "react";
 import api from "../services/api";
 import { saveAs } from "file-saver";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+
 function Transactions() {
   const [showModal, setShowModal] = useState(false);
   const [transactions, setTransactions] = useState([]);
   const [selectedTransaction, setSelectedTransaction] = useState(null);
+  const [filter, setFilter] = useState("all");
 
   const fetchTransactions = async () => {
     try {
-      const user = JSON.parse(
-        localStorage.getItem("user")
-      );
+      const storedUser = localStorage.getItem("user");
+      if (!storedUser) return;
+
+      const user = JSON.parse(storedUser);
+      if (!user?.id) return;
 
       const res = await api.get(
-        `/transactions?user_id=${user.id}`
+        `/transactions?user_id=${encodeURIComponent(user.id)}`
       );
 
-      setTransactions(res.data);
+      setTransactions(Array.isArray(res.data) ? res.data : []);
     } catch (error) {
-      console.log(error);
+      console.error("Failed to fetch transactions:", error);
     }
   };
 
@@ -31,219 +35,228 @@ function Transactions() {
   }, []);
 
   const deleteTransaction = async (id) => {
-    const confirmDelete = window.confirm(
-      "Delete this transaction?"
-    );
-
-    if (!confirmDelete) return;
+    if (!window.confirm("Delete this transaction?")) return;
 
     try {
-      await api.delete(
-        `/transactions/${id}`
-      );
-
-      fetchTransactions();
+      await api.delete(`/transactions/${id}`);
+      await fetchTransactions();
     } catch (error) {
-      console.log(error);
-      alert("Failed to delete transaction");
+      console.error(error);
+      alert("Failed to delete transaction.");
     }
   };
-  const exportCSV = () => {
-  const csvRows = [
-    [
-      "Title",
-      "Type",
-      "Category",
-      "Amount",
-      "Date",
-    ],
-  ];
 
-  transactions.forEach((t) => {
-    csvRows.push([
-      t.title,
-      t.type,
-      t.category,
-      t.amount,
-      t.transaction_date,
-    ]);
+  const filteredTransactions = transactions.filter((transaction) => {
+    if (filter === "all") return true;
+    return transaction.type?.toLowerCase() === filter;
   });
 
-  const csvContent =
-    csvRows
-      .map((row) => row.join(","))
+  const exportCSV = () => {
+    const escapeCSV = (value) =>
+      `"${String(value ?? "").replace(/"/g, '""')}"`;
+
+    const csvRows = [
+      ["Title", "Type", "Category", "Amount", "Date"],
+      ...filteredTransactions.map((transaction) => [
+        transaction.title,
+        transaction.type,
+        transaction.category,
+        transaction.amount,
+        transaction.transaction_date,
+      ]),
+    ];
+
+    const csvContent = csvRows
+      .map((row) => row.map(escapeCSV).join(","))
       .join("\n");
 
-  const blob = new Blob(
-    [csvContent],
-    {
+    const blob = new Blob(["\uFEFF", csvContent], {
       type: "text/csv;charset=utf-8;",
-    }
-  );
+    });
 
-  saveAs(
-    blob,
-    "transactions.csv"
-  );
-};
-const exportPDF = () => {
-  const doc = new jsPDF();
+    saveAs(blob, "transactions.csv");
+  };
 
-  doc.text(
-    "SpendSense Transactions",
-    14,
-    15
-  );
+  const exportPDF = () => {
+    const doc = new jsPDF();
 
-  autoTable(doc, {
-    head: [
-      [
-        "Title",
-        "Type",
-        "Category",
-        "Amount",
-      ],
-    ],
-    body: transactions.map(
-      (t) => [
-        t.title,
-        t.type,
-        t.category,
-        t.amount,
-      ]
-    ),
-  });
+    doc.setFontSize(18);
+    doc.text("SpendSense Transactions", 14, 15);
 
-  doc.save(
-    "transactions.pdf"
-  );
-};
+    autoTable(doc, {
+      startY: 24,
+      head: [["Title", "Type", "Category", "Amount", "Date"]],
+      body: filteredTransactions.map((transaction) => [
+        transaction.title || "",
+        transaction.type || "",
+        transaction.category || "",
+        `Rs. ${transaction.amount ?? 0}`,
+        transaction.transaction_date
+          ? new Date(transaction.transaction_date).toLocaleDateString("en-IN")
+          : "",
+      ]),
+      styles: { fontSize: 9, cellPadding: 3 },
+      headStyles: { fillColor: [109, 40, 217] },
+    });
+
+    doc.save("transactions.pdf");
+  };
+
+  const formatCurrency = (amount) =>
+    `₹${Number(amount || 0).toLocaleString("en-IN", {
+      maximumFractionDigits: 2,
+    })}`;
+
   return (
-    <div className="flex h-screen bg-gray-100 overflow-hidden">
-      <Sidebar />
+    <div className="w-full min-w-0 space-y-6">
+      {/* Page heading and actions */}
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 md:text-3xl">
+            Transactions
+          </h1>
+          <p className="mt-1 text-slate-500">
+            Manage your income and expenses
+          </p>
+        </div>
 
-      <main className="flex-1 overflow-y-auto p-4 md:p-6">
-
-        {/* Header */}
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold">
-              Transactions
-            </h1>
-
-            <p className="text-gray-500">
-              Manage your income and expenses
-            </p>
-          </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedTransaction(null);
+              setShowModal(true);
+            }}
+            className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700"
+          >
+            + Add Transaction
+          </button>
 
           <button
-  onClick={() => {
-    setSelectedTransaction(null);
-    setShowModal(true);
-  }}
-  className="bg-purple-600 text-white px-4 py-2 rounded-lg"
->
-  + Add Transaction
-</button>
-          <button
+            type="button"
             onClick={exportCSV}
-            className="ml-2 bg-green-600 text-white px-4 py-2 rounded-lg"
+            className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
           >
             Export CSV
           </button>
+
           <button
-  onClick={exportPDF}
-  className="bg-red-600 text-white px-4 py-2 rounded-lg"
->
-  Export PDF
-</button>
+            type="button"
+            onClick={exportPDF}
+            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+          >
+            Export PDF
+          </button>
         </div>
+      </div>
 
-        {/* Filters */}
-        <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
-          <select className="border rounded-lg p-2">
-            <option>All Transactions</option>
-            <option>Income</option>
-            <option>Expense</option>
-          </select>
-        </div>
+      {/* Transaction type filter */}
+      <div className="rounded-xl bg-white p-4 shadow-sm">
+        <label
+          htmlFor="transaction-filter"
+          className="mr-3 text-sm font-medium text-slate-700"
+        >
+          Filter:
+        </label>
 
-        {/* Transaction List */}
-        <div className="space-y-4">
+        <select
+          id="transaction-filter"
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+          className="rounded-lg border border-slate-300 bg-white p-2 text-sm outline-none focus:border-violet-500"
+        >
+          <option value="all">All Transactions</option>
+          <option value="income">Income</option>
+          <option value="expense">Expense</option>
+        </select>
 
-          {transactions.length === 0 ? (
-            <div className="bg-white p-6 rounded-xl shadow-sm text-center text-gray-500">
+        <span className="ml-3 text-sm text-slate-500">
+          {filteredTransactions.length} transaction
+          {filteredTransactions.length !== 1 ? "s" : ""}
+        </span>
+      </div>
+
+      {/* Transaction list */}
+      <div className="space-y-4">
+        {filteredTransactions.length === 0 ? (
+          <div className="rounded-xl bg-white p-8 text-center shadow-sm">
+            <p className="font-medium text-slate-700">
               No transactions found
-            </div>
-          ) : (
-            transactions.map((item) => (
-              <div
-                key={item.id}
-                className="bg-white rounded-xl shadow-sm p-4 flex justify-between items-center"
-              >
-                <div>
-                  <h3 className="font-semibold">
-                    {item.title}
-                  </h3>
+            </p>
+            <p className="mt-1 text-sm text-slate-500">
+              Add a transaction or choose another filter.
+            </p>
+          </div>
+        ) : (
+          filteredTransactions.map((item) => (
+            <article
+              key={item.id}
+              className="flex flex-col justify-between gap-4 rounded-xl bg-white p-4 shadow-sm sm:flex-row sm:items-center"
+            >
+              <div className="min-w-0">
+                <h3 className="break-words font-semibold text-slate-900">
+                  {item.title}
+                </h3>
 
-                  <p className="text-sm text-gray-500">
-                    {item.type} • {item.category}
-                  </p>
+                <p className="mt-1 text-sm capitalize text-slate-500">
+                  {item.type} • {item.category || "Uncategorized"}
+                </p>
 
-                  <p className="text-xs text-gray-400">
-                    {new Date(
-                      item.transaction_date
-                    ).toLocaleDateString()}
-                  </p>
-                </div>
-
-                <div className="text-right">
-                  <h3
-                    className={`font-bold ${
-                      item.type === "income"
-                        ? "text-green-600"
-                        : "text-red-500"
-                    }`}
-                  >
-                    {item.type === "income"
-                      ? "+"
-                      : "-"} ₹{item.amount}
-                  </h3>
-                  <button
-  onClick={() => {
-    setSelectedTransaction(item);
-    setShowModal(true);
-  }}
-  className="mt-2 mr-2 bg-blue-100 text-blue-600 px-3 py-1 rounded hover:bg-blue-200"
->
-  Edit
-</button>
-                  <button
-                    onClick={() =>
-                      deleteTransaction(item.id)
-                    }
-                    className="mt-2 bg-red-100 text-red-600 px-3 py-1 rounded hover:bg-red-200"
-                  >
-                    Delete
-                  </button>
-                </div>
-
+                <p className="mt-1 text-xs text-slate-400">
+                  {item.transaction_date
+                    ? new Date(item.transaction_date).toLocaleDateString(
+                        "en-IN"
+                      )
+                    : "Date unavailable"}
+                </p>
               </div>
-            ))
-          )}
 
-        </div>
+              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                <span
+                  className={`mr-2 font-bold ${
+                    item.type === "income"
+                      ? "text-green-600"
+                      : "text-red-500"
+                  }`}
+                >
+                  {item.type === "income" ? "+" : "-"}
+                  {formatCurrency(item.amount)}
+                </span>
 
-        <TransactionModal
-  isOpen={showModal}
-  onClose={() => {
-    setShowModal(false);
-    setSelectedTransaction(null);
-  }}
-  fetchTransactions={fetchTransactions}
-  transaction={selectedTransaction}
-/>
-      </main>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedTransaction(item);
+                    setShowModal(true);
+                  }}
+                  className="rounded-lg bg-blue-100 px-3 py-1.5 text-sm text-blue-700 hover:bg-blue-200"
+                >
+                  Edit
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => deleteTransaction(item.id)}
+                  className="rounded-lg bg-red-100 px-3 py-1.5 text-sm text-red-700 hover:bg-red-200"
+                >
+                  Delete
+                </button>
+              </div>
+            </article>
+          ))
+        )}
+      </div>
+
+      {/* Add/edit transaction modal */}
+      <TransactionModal
+        isOpen={showModal}
+        onClose={() => {
+          setShowModal(false);
+          setSelectedTransaction(null);
+        }}
+        fetchTransactions={fetchTransactions}
+        transaction={selectedTransaction}
+      />
     </div>
   );
 }

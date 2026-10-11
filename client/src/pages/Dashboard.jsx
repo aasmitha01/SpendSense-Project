@@ -1,4 +1,4 @@
-import Sidebar from "../components/Sidebar";
+
 import { useEffect, useState } from "react";
 import api from "../services/api";
 
@@ -16,44 +16,50 @@ function Dashboard() {
 
   const fetchDashboardData = async () => {
     try {
-      const user = JSON.parse(
-        localStorage.getItem("user")
-      );
+      const storedUser = localStorage.getItem("user");
+
+      if (!storedUser) {
+        console.error("User not found. Please log in.");
+        return;
+      }
+
+      const user = JSON.parse(storedUser);
+
+      if (!user?.id) {
+        console.error("User ID not found.");
+        return;
+      }
 
       const statsRes = await api.get(
-        `/transactions/dashboard?user_id=${user.id}`
+        `/transactions/dashboard?user_id=${encodeURIComponent(user.id)}`
       );
-
       setStats(statsRes.data);
 
       const transactionRes = await api.get(
-        `/transactions?user_id=${user.id}`
+        `/transactions?user_id=${encodeURIComponent(user.id)}`
       );
-
       setTransactions(
-        transactionRes.data.slice(0, 5)
+        Array.isArray(transactionRes.data)
+          ? transactionRes.data.slice(0, 5)
+          : []
       );
 
       const goalsRes = await api.get(
-        `/goals?user_id=${user.id}`
+        `/goals?user_id=${encodeURIComponent(user.id)}`
       );
-
-      setGoals(goalsRes.data);
+      setGoals(Array.isArray(goalsRes.data) ? goalsRes.data : []);
 
       const budgetsRes = await api.get(
-        `/budgets?user_id=${user.id}`
+        `/budgets?user_id=${encodeURIComponent(user.id)}`
       );
-
-      setBudgets(budgetsRes.data);
+      setBudgets(Array.isArray(budgetsRes.data) ? budgetsRes.data : []);
 
       const billsRes = await api.get(
-        `/bills?user_id=${user.id}`
+        `/bills?user_id=${encodeURIComponent(user.id)}`
       );
-
-      setBills(billsRes.data);
-
+      setBills(Array.isArray(billsRes.data) ? billsRes.data : []);
     } catch (error) {
-      console.log(error);
+      console.error("Failed to load dashboard data:", error);
     }
   };
 
@@ -61,205 +67,155 @@ function Dashboard() {
     fetchDashboardData();
   }, []);
 
+  const pendingBills = bills.filter(
+    (bill) => !bill.paid && bill.paid !== 1
+  );
+
+  const formatCurrency = (value) =>
+    `₹${Number(value || 0).toLocaleString("en-IN", {
+      maximumFractionDigits: 2,
+    })}`;
+
   return (
-    <div className="flex h-screen bg-gray-100 overflow-hidden">
-
-      <Sidebar />
-
-      <main className="flex-1 overflow-y-auto p-4 md:p-6">
-
-        <h1 className="text-2xl md:text-3xl font-bold">
+    <div className="w-full min-w-0 space-y-6">
+      {/* Page heading */}
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900 md:text-3xl">
           Dashboard
         </h1>
-
-        <p className="text-gray-500 mt-1 mb-6">
+        <p className="mt-1 text-slate-500">
           Track your income, expenses and savings in real time.
         </p>
+      </div>
 
-        {/* Summary Cards */}
-
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 mt-6">
-
-          <div className="bg-green-50 p-4 rounded-xl shadow-sm">
-            <h3 className="font-semibold text-green-700">
-              Income
-            </h3>
-
-            <p className="text-xl font-bold mt-2">
-              ₹{stats.totalIncome}
-            </p>
-          </div>
-
-          <div className="bg-red-50 p-4 rounded-xl shadow-sm">
-            <h3 className="font-semibold text-red-700">
-              Expense
-            </h3>
-
-            <p className="text-xl font-bold mt-2">
-              ₹{stats.totalExpense}
-            </p>
-          </div>
-
-          <div className="bg-purple-50 p-4 rounded-xl shadow-sm">
-            <h3 className="font-semibold text-purple-700">
-              Balance
-            </h3>
-
-            <p className="text-xl font-bold mt-2">
-              ₹{stats.balance}
-            </p>
-          </div>
-
-          <div className="bg-blue-50 p-4 rounded-xl shadow-sm">
-            <h3 className="font-semibold text-blue-700">
-              Goals
-            </h3>
-
-            <p className="text-xl font-bold mt-2">
-              {goals.length}
-            </p>
-          </div>
-
-          <div className="bg-yellow-50 p-4 rounded-xl shadow-sm">
-            <h3 className="font-semibold text-yellow-700">
-              Budgets
-            </h3>
-
-            <p className="text-xl font-bold mt-2">
-              {budgets.length}
-            </p>
-          </div>
-
-          <div className="bg-pink-50 p-4 rounded-xl shadow-sm">
-            <h3 className="font-semibold text-pink-700">
-              Pending Bills
-            </h3>
-
-            <p className="text-xl font-bold mt-2">
-              {
-                bills.filter(
-                  (bill) => !bill.paid
-                ).length
-              }
-            </p>
-          </div>
-
+      {/* Summary cards */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+        <div className="rounded-xl bg-green-50 p-4 shadow-sm">
+          <h3 className="font-semibold text-green-700">Income</h3>
+          <p className="mt-2 break-words text-xl font-bold text-slate-900">
+            {formatCurrency(stats.totalIncome)}
+          </p>
         </div>
 
-        {/* Recent Transactions */}
+        <div className="rounded-xl bg-red-50 p-4 shadow-sm">
+          <h3 className="font-semibold text-red-700">Expense</h3>
+          <p className="mt-2 break-words text-xl font-bold text-slate-900">
+            {formatCurrency(stats.totalExpense)}
+          </p>
+        </div>
 
-        <div className="bg-white rounded-xl shadow-sm mt-6">
+        <div className="rounded-xl bg-purple-50 p-4 shadow-sm">
+          <h3 className="font-semibold text-purple-700">Balance</h3>
+          <p className="mt-2 break-words text-xl font-bold text-slate-900">
+            {formatCurrency(stats.balance)}
+          </p>
+        </div>
 
-          <div className="border-b p-4">
-            <h2 className="text-xl font-semibold">
-              Recent Transactions
-            </h2>
-          </div>
+        <div className="rounded-xl bg-blue-50 p-4 shadow-sm">
+          <h3 className="font-semibold text-blue-700">Goals</h3>
+          <p className="mt-2 text-xl font-bold text-slate-900">
+            {goals.length}
+          </p>
+        </div>
 
-          <div className="p-4 space-y-3">
+        <div className="rounded-xl bg-yellow-50 p-4 shadow-sm">
+          <h3 className="font-semibold text-yellow-700">Budgets</h3>
+          <p className="mt-2 text-xl font-bold text-slate-900">
+            {budgets.length}
+          </p>
+        </div>
 
-            {transactions.length === 0 ? (
-              <p className="text-gray-500">
-                No Transactions Found
-              </p>
-            ) : (
-              transactions.map((item) => (
-                <div
-                  key={item.id}
-                  className="bg-gray-50 rounded-lg p-3 flex justify-between items-center"
-                >
+        <div className="rounded-xl bg-pink-50 p-4 shadow-sm">
+          <h3 className="font-semibold text-pink-700">Pending Bills</h3>
+          <p className="mt-2 text-xl font-bold text-slate-900">
+            {pendingBills.length}
+          </p>
+        </div>
+      </div>
 
-                  <div>
-                    <h3 className="font-medium">
-                      {item.title}
-                    </h3>
+      {/* Recent transactions */}
+      <section className="min-w-0 rounded-xl bg-white shadow-sm">
+        <div className="border-b border-slate-100 p-4">
+          <h2 className="text-xl font-semibold text-slate-900">
+            Recent Transactions
+          </h2>
+        </div>
 
-                    <p className="text-gray-500 text-sm">
-                      {new Date(
-                        item.transaction_date
-                      ).toLocaleDateString()}
-                    </p>
-                  </div>
-
-                  <span
-                    className={`font-semibold ${
-                      item.type === "income"
-                        ? "text-green-600"
-                        : "text-red-500"
-                    }`}
-                  >
-                    {item.type === "income"
-                      ? "+"
-                      : "-"}
-                    ₹{item.amount}
-                  </span>
-
+        <div className="space-y-3 p-4">
+          {transactions.length === 0 ? (
+            <p className="text-slate-500">No Transactions Found</p>
+          ) : (
+            transactions.map((item) => (
+              <div
+                key={item.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 p-3"
+              >
+                <div className="min-w-0">
+                  <h3 className="break-words font-medium text-slate-900">
+                    {item.title}
+                  </h3>
+                  <p className="text-sm text-slate-500">
+                    {item.transaction_date
+                      ? new Date(item.transaction_date).toLocaleDateString(
+                          "en-IN"
+                        )
+                      : "Date unavailable"}
+                  </p>
                 </div>
-              ))
-            )}
 
-          </div>
-
-        </div>
-
-        {/* Upcoming Bills */}
-
-        <div className="bg-white rounded-xl shadow-sm mt-6">
-
-          <div className="border-b p-4">
-            <h2 className="text-xl font-semibold">
-              Upcoming Bills
-            </h2>
-          </div>
-
-          <div className="p-4 space-y-3">
-
-            {bills
-              .filter(
-                (bill) => !bill.paid
-              )
-              .slice(0, 3)
-              .map((bill) => (
-                <div
-                  key={bill.id}
-                  className="bg-gray-50 rounded-lg p-3 flex justify-between items-center"
+                <span
+                  className={`shrink-0 font-semibold ${
+                    item.type === "income"
+                      ? "text-green-600"
+                      : "text-red-500"
+                  }`}
                 >
+                  {item.type === "income" ? "+" : "-"}
+                  {formatCurrency(item.amount)}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      </section>
 
-                  <div>
-                    <h3 className="font-medium">
-                      {bill.bill_name}
-                    </h3>
-
-                    <p className="text-sm text-gray-500">
-                      Due:
-                      {" "}
-                      {new Date(
-                        bill.due_date
-                      ).toLocaleDateString()}
-                    </p>
-                  </div>
-
-                  <span className="text-red-500 font-semibold">
-                    ₹{bill.amount}
-                  </span>
-
-                </div>
-              ))}
-
-            {bills.filter(
-              (bill) => !bill.paid
-            ).length === 0 && (
-              <p className="text-gray-500">
-                No Pending Bills
-              </p>
-            )}
-
-          </div>
-
+      {/* Upcoming bills */}
+      <section className="min-w-0 rounded-xl bg-white shadow-sm">
+        <div className="border-b border-slate-100 p-4">
+          <h2 className="text-xl font-semibold text-slate-900">
+            Upcoming Bills
+          </h2>
         </div>
 
-      </main>
+        <div className="space-y-3 p-4">
+          {pendingBills.length === 0 ? (
+            <p className="text-slate-500">No Pending Bills</p>
+          ) : (
+            pendingBills.slice(0, 3).map((bill) => (
+              <div
+                key={bill.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 p-3"
+              >
+                <div className="min-w-0">
+                  <h3 className="break-words font-medium text-slate-900">
+                    {bill.bill_name}
+                  </h3>
+                  <p className="text-sm text-slate-500">
+                    Due:{" "}
+                    {bill.due_date
+                      ? new Date(bill.due_date).toLocaleDateString("en-IN")
+                      : "Date unavailable"}
+                  </p>
+                </div>
 
+                <span className="shrink-0 font-semibold text-red-500">
+                  {formatCurrency(bill.amount)}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      </section>
     </div>
   );
 }
